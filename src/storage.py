@@ -442,8 +442,9 @@ class LocalJsonlRepository:
         return events[:limit]
 
     def routing_stats(self) -> dict[str, Any]:
-        path = self.audit_path if self.audit_path.exists() else self.decisions_path
-        rows = list(self._read(path))
+        rows = list(self._read(self.audit_path))
+        if not rows:
+            rows = list(self._read(self.decisions_path))
         if not rows:
             return {
                 "total": 0,
