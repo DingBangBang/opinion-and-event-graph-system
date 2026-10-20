@@ -1,0 +1,206 @@
+{
+  "generated_at": "2026-10-20T06:41:28.516215+00:00",
+  "generated_comments": 544,
+  "processed_comments": 544,
+  "errors": 0,
+  "alerts": 1,
+  "absa_quadruples": 1720,
+  "negative_share": 0.5184,
+  "avg_tri_agent_latency_ms": 0.131,
+  "routing": {
+    "total": 544,
+    "routed_to_llm": 110,
+    "routing_rate": 0.2022,
+    "avg_sdi": 0.2369,
+    "estimated_cost_usd": 0.0,
+    "avoided_cost_usd": 0.07103115,
+    "by_agent": {
+      "vader": 415,
+      "llm": 110,
+      "finbert": 19
+    }
+  },
+  "graph": {
+    "backend": "memory",
+    "entities": 11,
+    "events": 544,
+    "relationships": 1497,
+    "negative_events": 282,
+    "aspects": {
+      "general": 359,
+      "withdrawal": 236,
+      "settlement_speed": 193,
+      "customer_service": 188,
+      "app_experience": 146,
+      "fee": 144,
+      "market": 64,
+      "security": 61,
+      "liquidity": 40,
+      "compliance": 24,
+      "kyc": 21,
+      "deposit": 21
+    }
+  },
+  "top_entities": [
+    [
+      "币安",
+      106
+    ],
+    [
+      "OKX",
+      73
+    ],
+    [
+      "Gate.io",
+      70
+    ],
+    [
+      "Bybit",
+      69
+    ],
+    [
+      "火币HTX",
+      66
+    ],
+    [
+      "Coinbase",
+      66
+    ],
+    [
+      "Bitget",
+      52
+    ],
+    [
+      "SOL",
+      18
+    ]
+  ],
+  "top_aspects": [
+    [
+      "整体体验",
+      451
+    ],
+    [
+      "提现",
+      236
+    ],
+    [
+      "App体验",
+      213
+    ],
+    [
+      "到账速度",
+      193
+    ],
+    [
+      "客服",
+      188
+    ],
+    [
+      "手续费",
+      155
+    ],
+    [
+      "行情",
+      85
+    ],
+    [
+      "安全性",
+      81
+    ]
+  ],
+  "multihop_example": {
+    "query": "提现",
+    "negative_events": 5,
+    "events": [
+      {
+        "event_id": "evt_db92e4d5d8732194",
+        "label": "Gate.io·提现·负面事件",
+        "timestamp": "2026-10-20T05:56:54.015813Z",
+        "sentiment": -0.7759,
+        "sentiment_label": "negative",
+        "comment_id": "c_1202bdcb593bd632",
+        "hops": 1
+      },
+      {
+        "event_id": "evt_7accc2e28ea4caec",
+        "label": "币安·提现·负面事件",
+        "timestamp": "2026-10-20T05:53:19.391069Z",
+        "sentiment": -0.7699,
+        "sentiment_label": "negative",
+        "comment_id": "c_ffd3e94a972e783f",
+        "hops": 1
+      },
+      {
+        "event_id": "evt_a320ba97c318c82e",
+        "label": "火币HTX·提现·负面事件",
+        "timestamp": "2026-10-20T05:40:13.561117Z",
+        "sentiment": -0.3969,
+        "sentiment_label": "negative",
+        "comment_id": "c_13e53d396311c2db",
+        "hops": 1
+      },
+      {
+        "event_id": "evt_b7e47580a1b652f1",
+        "label": "火币HTX·提现·负面事件",
+        "timestamp": "2026-10-20T05:39:02.713247Z",
+        "sentiment": -0.7759,
+        "sentiment_label": "negative",
+        "comment_id": "c_7a54bc523c46ec03",
+        "hops": 1
+      },
+      {
+        "event_id": "evt_57f9d6f858d54dcb",
+        "label": "OKX·提现·负面事件",
+        "timestamp": "2026-10-20T05:14:44.452485Z",
+        "sentiment": -0.3969,
+        "sentiment_label": "negative",
+        "comment_id": "c_f92da4a407fd3aa9",
+        "hops": 1
+      }
+    ]
+  },
+  "quant": {
+    "entity": "币安",
+    "symbol": "BTCUSDT",
+    "frequency": "1h",
+    "simulated_klines": true,
+    "observations": 49,
+    "sentiment_mean": -0.117,
+    "sentiment_std": 0.4541,
+    "best_lag_hours": 1,
+    "best_lag_correlation": 0.7662,
+    "best_lag_p_value": 0.0,
+    "granger": {
+      "sufficient_data": true,
+      "n": 49,
+      "max_lag": 8,
+      "p_values": {
+        "1": 0.0,
+        "2": 0.0,
+        "3": 0.0,
+        "4": 4e-06,
+        "5": 7.7e-05,
+        "6": 0.000769,
+        "7": 0.003542,
+        "8": 0.003716
+      },
+      "best_lag": 1,
+      "min_p_value": 0.0,
+      "significant": true,
+      "adf_pvalue_sentiment": 0.0229,
+      "adf_pvalue_returns": 0.0001,
+      "method": "numpy-ols-f-test",
+      "interpretation": "在 lag=1 时 p=0.0000，拒绝原假设：情感显著格兰杰领先于价格收益。"
+    },
+    "figure": "/Users/dingbangchu/WorkSpace/opinion-and-event-graph-system/reports/sentiment_price_correlation.png",
+    "csv": "/Users/dingbangchu/WorkSpace/opinion-and-event-graph-system/data/sentiment_price.csv"
+  },
+  "figures": [
+    "reports/sentiment_trend.png",
+    "reports/routing_dashboard.png",
+    "reports/absa_aspects.png",
+    "reports/graph_preview.png",
+    "reports/sentiment_price_correlation.png"
+  ]
+}

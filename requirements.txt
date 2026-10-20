@@ -1,0 +1,27 @@
+# ---------------------------------------------------------------------------
+# Core runtime dependencies (light enough for CI and the default Docker image)
+# Heavy Transformer inference is optional: see requirements-ml.txt
+# ---------------------------------------------------------------------------
+pydantic>=2.7,<3
+pydantic-settings>=2.3,<3
+fastapi>=0.111,<1
+uvicorn[standard]>=0.30,<1
+httpx>=0.27,<1
+tenacity>=8.3,<10
+orjson>=3.10
+
+# Streaming / storage
+kafka-python>=2.0.2,<3
+elasticsearch>=8.13,<9
+neo4j>=5.20,<6
+
+# NLP / analytics
+jieba>=0.42.1
+vaderSentiment>=3.3.2
+pandas>=2.1,<3
+numpy>=1.26,<3
+matplotlib>=3.8,<4
+python-dotenv>=1.0
+
+# Test
+pytest>=8.2,<9

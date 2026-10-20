@@ -1,0 +1,185 @@
+name: opinion-and-event-graph
+
+x-common-env: &common-env
+  LOG_LEVEL: INFO
+  DATA_DIR: /app/data
+  REPORTS_DIR: /app/reports
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  KAFKA_TOPIC_RAW: raw_comments
+  KAFKA_CONSUMER_GROUP: opinion-stream-processor
+  ES_URL: http://elasticsearch:9200
+  ES_INDEX_COMMENTS: opinion_comments
+  ES_INDEX_DECISIONS: tri_agent_decisions
+  ES_INDEX_ALERTS: opinion_alerts
+  NEO4J_URI: bolt://neo4j:7687
+  NEO4J_USER: neo4j
+  NEO4J_PASSWORD: ${NEO4J_PASSWORD:-opinion-graph}
+  NEO4J_DATABASE: neo4j
+  GRAPH_BACKEND: neo4j
+  ABSA_BACKEND: ${ABSA_BACKEND:-auto}
+  ABSA_MODEL: ${ABSA_MODEL:-yangheng/deberta-v3-base-absa-v1.1}
+  ABSA_ALLOW_MODEL_DOWNLOAD: ${ABSA_ALLOW_MODEL_DOWNLOAD:-false}
+  ENABLE_FINBERT: ${ENABLE_FINBERT:-true}
+  SDI_THRESHOLD: ${SDI_THRESHOLD:-0.45}
+  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+  DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+  DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+  ALERT_WINDOW_SECONDS: ${ALERT_WINDOW_SECONDS:-300}
+  ALERT_MIN_SAMPLES: ${ALERT_MIN_SAMPLES:-8}
+  ALERT_NEGATIVE_RATIO: ${ALERT_NEGATIVE_RATIO:-0.6}
+  API_HOST: 0.0.0.0
+  API_PORT: 8000
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: opinion-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    healthcheck:
+      test: ["CMD-SHELL", "cub zk-ready localhost 2181 30"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: opinion-kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "29092:29092"
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 24
+    healthcheck:
+      test: ["CMD-SHELL", "cub kafka-ready -b localhost:9092 1 30"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    container_name: opinion-elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      xpack.security.http.ssl.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      bootstrap.memory_lock: "true"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  neo4j:
+    image: neo4j:5.20-community
+    container_name: opinion-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-opinion-graph}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4jdata:/data
+      - neo4jlogs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p ${NEO4J_PASSWORD:-opinion-graph} 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      args:
+        INSTALL_ML: ${INSTALL_ML:-false}
+    container_name: opinion-api
+    command: uvicorn src.api_server:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment: *common-env
+    volumes:
+      - opiniondata:/app/data
+      - reports:/app/reports
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  processor:
+    build:
+      context: .
+      args:
+        INSTALL_ML: ${INSTALL_ML:-false}
+    container_name: opinion-processor
+    command: python -m src.stream_processor --from-beginning
+    environment: *common-env
+    volumes:
+      - opiniondata:/app/data
+      - reports:/app/reports
+    depends_on:
+      kafka:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    restart: unless-stopped
+
+  producer:
+    build:
+      context: .
+      args:
+        INSTALL_ML: ${INSTALL_ML:-false}
+    container_name: opinion-producer
+    command: python scripts/mock_producer.py --bootstrap kafka:9092 --topic raw_comments --count 1000 --rate 5
+    environment:
+      <<: *common-env
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    profiles: ["demo"]
+    restart: "no"
+
+volumes:
+  esdata:
+  neo4jdata:
+  neo4jlogs:
+  opiniondata:
+  reports:

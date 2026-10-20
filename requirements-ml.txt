@@ -1,0 +1,9 @@
+# ---------------------------------------------------------------------------
+# Optional: real Transformer backends (ABSA / FinBERT)
+# Install with:  pip install -r requirements-ml.txt
+# CPU wheels are ~2 GB; the pipeline degrades to lexicons when absent.
+# ---------------------------------------------------------------------------
+torch>=2.2
+transformers>=4.40,<5
+sentencepiece>=0.2
+accelerate>=0.30

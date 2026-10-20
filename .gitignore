@@ -1,0 +1,41 @@
+# ----- 虚拟环境 / secrets -----
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# ----- 缓存 -----
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ----- 运行时数据 / 日志 -----
+logs/
+tmp/
+data/*
+!data/.gitkeep
+!data/sample_comments.jsonl
+!data/demo_processed.jsonl
+!data/demo_sentiment.csv
+*.log
+*.tmp
+*.pid
+
+# ----- 模型缓存 -----
+models/
+.cache/
+
+# ----- 编辑器 / 操作系统 -----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# ----- 大文件（模型权重、ES 快照） -----
+*.bin
+*.safetensors
