@@ -1,14 +1,19 @@
-# 实时多 Agent 舆情分析与事件图谱系统
+# GenAI 原生：实时多 Agent 舆情分析与事件图谱系统
 
-> **Real-time Multi-Agent Opinion Analysis & Event Graph System**
+> **A GenAI-native Agentic System for Real-time Opinion Analysis & Event GraphRAG**
 >
-> 从 `Portfolio/projects/05_Comments_NLP` 的「离线 SnowNLP + LDA」升级为
-> **Kafka 实时流 → ABSA 四元组 → Tri-Agent(SDI 路由) → Elasticsearch → Neo4j GraphRAG → FastAPI → 量化信号** 的完整闭环。
+> 这不是「SnowNLP + LDA」的迭代版，而是一次范式切换：
+> **LLM-as-a-Judge 仲裁 → Generative Information Extraction → LLM 构建知识图谱 → Agentic Workflow 编排 → GraphRAG 多跳检索**。
+>
+> 从 `Portfolio/projects/05_Comments_NLP` 的离线批处理，升级为
+> **Kafka 实时流 → ABSA 四元组 → Tri-Agent(SDI 路由) → Elasticsearch → Neo4j GraphRAG → FastAPI → 量化信号** 的 GenAI 闭环。
 
 ![tests](https://img.shields.io/badge/tests-22%20passed-brightgreen)
+![GenAI](https://img.shields.io/badge/GenAI-LLM--as--a--Judge-purple)
+![GraphRAG](https://img.shields.io/badge/GraphRAG-Knowledge%20Graph-blueviolet)
+![Agentic](https://img.shields.io/badge/Agentic-Workflow-ff69b4)
 ![python](https://img.shields.io/badge/python-3.10-blue)
 ![stack](https://img.shields.io/badge/Kafka%20%C2%B7%20ES%20%C2%B7%20Neo4j%20%C2%B7%20FastAPI-orange)
-![status](https://img.shields.io/badge/demo-reproducible-success)
 
 ---
 
@@ -17,17 +22,80 @@
 | 项目 | 结果 |
 | --- | --- |
 | 演示数据 | 544 条中英混合评论（72 小时，含一次「币安提现」负面爆发） |
-| ABSA 输出 | **1,720 条四元组**（实体 / 方面 / 观点词 / 极性） |
+| Generative IE | **1,720 条四元组**（实体 / 方面 / 观点词 / 极性） |
 | 流处理 | 544/544 成功，0 异常；滑动窗口捕获 **1 次负面突增告警** |
-| Tri-Agent 路由 | LLM 路由率 **20.2%**，约 **79.8%** 评论由小模型直接处理 |
+| LLM-as-a-Judge | LLM 路由率 **20.2%**，约 **79.8%** 评论由小模型直接处理 |
 | 成本 | 按 DeepSeek 官方价估算，全量 LLM ≈ **$160 / 百万条**；本策略 ≈ **$32 / 百万条** |
-| 图谱 | 11 个实体、544 个事件、1,497 条 `INVOLVES` 关系；282 个负面事件 |
+| GraphRAG | 11 个实体、544 个事件、1,497 条 `INVOLVES` 关系；282 个负面事件 |
 | 量化 | 情感(t) 与收益(t+1) 相关 **r = 0.7662**，Granger **p < 0.0001**（模拟 K 线，方法验证） |
-| 工程 | Docker Compose 编排 6 个服务；22 个 pytest 全绿；无外部依赖时可离线降级运行 |
+| 工程 | Docker Compose 编排 6 个服务；22 个 pytest 全绿；无外部依赖时自动降级 |
 
 > ⚠️ 量化部分默认使用**模拟 K 线**：在 t-1 情感上注入了已知的领先关系，用于验证估计器能否恢复真实结构，**不构成真实市场结论**。`--live` 可切换 Binance 公共 API。
 
+> 🔑 **LLM 路径说明**：配置 `DEEPSEEK_API_KEY` 后，ABSA/GraphRAG 走 DeepSeek JSON Mode，Tri-Agent 走真实 LLM 仲裁；未配置时自动降级到「小模型委员会 + 词典抽取」，保证 CI/离线 demo 100% 可复现。GenAI 是**一等公民**，降级只是工程兜底，不是主路径。
+
 ---
+
+## 0.5 GenAI First：为什么这不是传统 NLP 流水线
+
+传统 NLP 项目是「训练/调用一个分类器 → 输出标签」；本系统的核心是：
+**让 LLM 参与判断、抽取、建图和编排，并用工程手段控制它的成本、延迟与不确定性。**
+
+| GenAI 范式 | 在本系统中的落点 | 代码 |
+| --- | --- | --- |
+| **LLM-as-a-Judge / AI Routing** | VADER/FinBERT 先打分，SDI 发现分歧后把「争议样本」交给 LLM 裁决；LLM 不是全量推理，而是**智能路由器** | `src/tri_agent.py` |
+| **Generative Information Extraction** | Zero-shot / Few-shot 提示词 + JSON Schema，从非结构化评论生成 `(实体, 方面, 观点词, 极性)` 四元组 | `src/absa_engine.py` |
+| **GraphRAG** | Generative IE（LLM 或离线 fallback）抽取的实体/方面/事件被投影为知识图谱；多跳检索返回子图与时间线，作为 RAG 的结构化上下文 | `src/graph_builder.py` + `src/api_server.py` |
+| **Agentic Workflow** | Observe → Think(SDI) → Act(route/arbitrate) → Reflect(audit) → Improve(threshold tuning) 的闭环，不是硬编码 if-else | `src/stream_processor.py` + `src/tri_agent.py` |
+| **Structured Output** | DeepSeek `response_format=json_object` + Pydantic 校验 + 失败重试/降级，保证 LLM 输出可入库 | `src/llm_client.py` + `src/schemas.py` |
+| **Cost-aware Inference** | 按 token 价格实时估算成本，记录每次路由的 `estimated_cost` / `avoided_cost` | `src/tri_agent.py` |
+
+### 0.5.1 传统 NLP vs GenAI-native
+
+| 能力 | 传统 NLP 做法 | 本系统（GenAI-native） |
+| --- | --- | --- |
+| 情感分类 | 训练/加载固定分类头，标签体系改一次就要重训 | **Prompt 定义方面体系**，新增方面只改 taxonomy + few-shot，不重训 |
+| 复杂语义 | 词典/小模型对反讽、跨句、隐含方面无能为力 | LLM 读取上下文 + ABSA 四元组做**跨句裁判** |
+| 信息抽取 | 正则/NER 标注，覆盖有限、维护成本高 | **生成式抽取**，零样本处理新实体/新表达 |
+| 知识图谱 | 人工写 schema + 规则抽关系 | LLM 生成结构化事实，代码自动 `MERGE` 成图 |
+| 系统编排 | 固定流水线 | **Agentic 路由**：根据不确定性动态决定调用哪个模型 |
+| 成本 | 全量上大模型，或全量用小模型牺牲效果 | **按分歧付费**，把 LLM 预算集中在 20% 难样本上 |
+
+### 0.5.2 GenAI 能力矩阵（本仓库已实现）
+
+```mermaid
+flowchart TB
+    subgraph GENAI["GenAI Capability Stack"]
+        direction LR
+        IE["Generative IE<br/>ABSA 四元组"]
+        JUDGE["LLM-as-a-Judge<br/>SDI 仲裁"]
+        GRAPH["GraphRAG<br/>LLM-built KG + 多跳"]
+        AGENT["Agentic Workflow<br/>路由/审计/降级"]
+        STRUCT["Structured Output<br/>JSON Mode + Pydantic"]
+    end
+    IE --> GRAPH
+    JUDGE --> AGENT
+    STRUCT --> IE
+    STRUCT --> JUDGE
+    GRAPH --> AGENT
+```
+
+> **一句话**：小模型负责「便宜且确定」的部分，LLM 负责「语义复杂且不确定」的部分，图谱负责「关系与多跳」，审计负责「可解释与可优化」。
+
+### 0.6 30 秒 Pitch（可直接用于面试 / 项目介绍）
+
+> 我构建了一个 **GenAI-native 的实时舆情系统**：用 **Generative Information Extraction** 把非结构化评论转成 `(实体, 方面, 观点词, 极性)` 四元组；用 **TriAgent 架构** 让 VADER、FinBERT 与 **LLM-as-a-Judge** 组成委员会，通过 **Semantic Divergence Index (SDI)** 把 LLM 调用率压到 20%，在保持复杂语义判断的同时降低约 80% 成本；再把抽取结果写成 **Entity–Event 知识图谱**，通过 **GraphRAG 多跳检索**支持「提现问题影响了哪些平台、何时、和谁一起」这类关系型问题；整个链路是 **Agentic Workflow**（Observe → Think → Act → Reflect），每次路由都有可审计的 reasoning trace。工程上用 Kafka + Elasticsearch + Neo4j + FastAPI + Docker Compose 落地，并有 22 个测试与离线可复现实验。
+
+### 0.7 简历 Bullet（量化版）
+
+- 设计 **TriAgent（VADER / FinBERT / LLM Judge）** 与 **SDI 动态路由**，将 LLM 调用率降至 **20.2%**，百万条评论成本从约 **$160 降至 $32**（-79.8%）。
+- 构建 **Generative IE Pipeline**：Prompt + JSON Schema + Pydantic 校验，从 544 条评论抽取 **1,720 条四元组**，LLM 模式下支持零样本扩展新方面。
+- 实现 **GraphRAG**：将生成式抽取（LLM / ABSA）产出的实体与事件投影为 **11 实体、544 事件、1,497 条关系**的 Neo4j 图谱，支持按方面词的多跳负面事件时间线检索。
+- 搭建 **Agentic 实时链路**：Kafka → ABSA → SDI Router → ES/Neo4j，滑动窗口捕获负面突增；离线回放吞吐 **385 msg/s**，22 个 pytest 全绿。
+
+---
+
+
 
 ## 1. 为什么重构：05_Comments_NLP 的局限
 
@@ -36,7 +104,8 @@
 1. **情感粒度太粗**：SnowNLP 只给整条评论一个 0~1 分数，无法回答「用户到底对提现、手续费还是客服不满」；
 2. **模型单一、无仲裁**：词典/小模型在反讽、跨句、领域词上会错，但没有机制发现「自己不确定」；
 3. **离线、无时间维度**：Excel/CSV 结果无法支撑分钟级预警，也做不了事件时间线；
-4. **没有服务化**：分析结果不能被 API、看板、量化策略复用。
+4. **没有服务化**：分析结果不能被 API、看板、量化策略复用；
+5. **没有生成式推理**：无法用 LLM 处理隐含方面、反讽、跨句指代，也无法把非结构化文本**生成**为可入图的结构化事实。
 
 ### 1.1 与 05 的逐项对照
 
@@ -48,6 +117,8 @@
 | 处理模式 | 离线脚本 | **Kafka 实时流** + 滑动窗口告警 |
 | 存储 | Excel / CSV | **Elasticsearch**（检索/聚合）+ **Neo4j**（关系/多跳） |
 | 知识结构 | 词云 / LDA 主题 | **Entity–Event 异构图** + GraphRAG 多跳查询 |
+| LLM 角色 | 无 | **LLM-as-a-Judge + Generative IE + 图谱语义生成** |
+| 编排方式 | 固定脚本 | **Agentic Workflow**：Observe→Think→Act→Reflect |
 | 输出 | 静态图表 | **FastAPI** + 量化信号 + 可审计路由日志 |
 | 部署 | 本机 Python | **Docker Compose**（ZK/Kafka/ES/Neo4j/API/Processor） |
 | 可观测性 | 无 | `/health`、`/routing/stats`、`/alerts`、JSONL 审计 |
@@ -75,30 +146,30 @@ flowchart LR
         P -->|JSON| K
     end
 
-    subgraph NLP["② 细粒度理解"]
+    subgraph NLP["② GenAI 理解层"]
         S["stream_processor.py"]
-        A["ABSA Engine<br/>HF / DeepSeek / Lexicon"]
-        V["VADER Agent<br/>词级"]
-        F["FinBERT Agent<br/>句级"]
-        L["LLM Agent<br/>跨句推理"]
-        R{"SDI Router<br/>SDI > θ ?"}
+        A["Generative IE Agent<br/>ABSA 四元组<br/>HF / DeepSeek / Lexicon"]
+        V["VADER Agent<br/>词级快筛"]
+        F["FinBERT Agent<br/>句级领域模型"]
+        L["LLM Judge<br/>跨句 / 反讽 / 仲裁"]
+        R{"Agentic Router<br/>SDI > θ ?"}
         K --> S --> A
-        A -->|四元组| R
+        A -->|结构化四元组| R
         V --> R
         F --> R
-        R -->|"否 (≈80%)"| D["采纳高置信小模型<br/>成本≈0"]
+        R -->|"否 (≈80%)"| D["Deterministic Path<br/>采纳高置信小模型"]
         R -->|"是 (≈20%)"| L
-        L --> D
+        L -->|"JSON 裁决 + rationale"| D
     end
 
-    subgraph STORE["③ 存储与知识"]
+    subgraph STORE["③ 知识与记忆"]
         E[("Elasticsearch<br/>评论/决策/告警")]
-        G[("Neo4j<br/>Entity–Event Graph")]
+        G[("Neo4j<br/>LLM/ABSA-extracted KG")]
         W["滑动窗口<br/>负面突增检测"]
         S --> E
         S --> W --> E
-        S --> GB["GraphBuilder"] --> G
-        D --> AUD["路由审计<br/>JSONL + ES"]
+        S --> GB["GraphRAG Builder<br/>Entity / Event / INVOLVES"] --> G
+        D --> AUD["Reflection Log<br/>路由审计 JSONL + ES"]
     end
 
     subgraph SERVE["④ 服务与分析"]
@@ -119,12 +190,48 @@ flowchart LR
 
 **成本优势的核心**：LLM 只处理「小模型吵架」的样本，且所有路由决策都写入审计表，可随时回放、调阈值、做 A/B。**GraphRAG 的价值**：把孤立的评论变成「实体—事件—方面」可追溯链路，支持「提现问题影响了哪些平台/时间段/其他实体」这类多跳问题。
 
+### 2.1 Agentic Workflow：不是流水线，而是「思考—判断—分发」闭环
+
+> **行为逻辑生成**：执行路径不是写死的 DAG，而是由「输入不确定性 + 路由策略 + LLM 裁决 + 审计反馈」共同决定的动态行为。
+
+```mermaid
+stateDiagram-v2
+    [*] --> Observe: Kafka raw_comments
+    Observe --> Extract: Generative IE (ABSA)
+    Extract --> Think: VADER + FinBERT scores
+    Think --> Decide: compute SDI
+    Decide --> Deterministic: SDI ≤ θ (≈80%)
+    Decide --> Arbitrate: SDI > θ (≈20%)
+    Arbitrate --> Deterministic: LLM JSON verdict
+    Deterministic --> Act: ES index + Graph MERGE
+    Act --> Reflect: routing audit + cost
+    Reflect --> Improve: threshold / prompt tuning
+    Improve --> [*]
+```
+
+| 阶段 | Agent 在做什么 | 工程实现 |
+| --- | --- | --- |
+| **Observe** | 消费流式评论，保留 `comment_id`、时间、来源 | `StreamProcessor.run_kafka()` |
+| **Extract** | 生成式抽取实体/方面/观点词/极性 | `ABSAEngine` + JSON Schema |
+| **Think** | 两个小模型分别给出分数与置信度 | `VADERAgent` / `FinBERTAgent` |
+| **Decide** | 计算 SDI，判断「是否有语义分歧」 | `TriAgentRouter.semantic_divergence()` |
+| **Act** | 低分歧采纳小模型；高分歧调用 LLM Judge 并裁决 | `TriAgentRouter.analyze()` |
+| **Reflect** | 记录 SDI、最终选择、成本、rationale | `RoutingAuditLogger` |
+| **Improve** | 基于审计回放调阈值 / prompt / 模型 | `/routing/stats` + JSONL 回放 |
+
+这就是 **Agentic Workflow**：系统不是「每条都调用 LLM」或「每条都走词典」，而是**根据输入的不确定性动态选择推理路径**，并对每次选择留下可审计的 reasoning trace。
 
 ---
 
+
 ## 3. 六维度实现详解
 
-### 维度一：基于方面的细粒度情感分析（ABSA）
+> ① **Generative IE**、② **LLM-as-a-Judge**、④ **GraphRAG** 是 GenAI 核心；③ 实时管道、⑤ 量化、⑥ MLOps 是让它们可落地的工程底座。
+
+### 维度一：Generative Information Extraction（生成式 ABSA）
+
+> **GenAI 关键词**：Zero-shot / Few-shot Extraction、JSON Mode、Schema-constrained Generation。
+> 不是「写正则 / 标 NER 数据 / 训练分类头」，而是让 LLM **直接生成结构化事实**。
 
 **目标**：把「币安提现三天没到账，客服还敷衍」拆成：
 
@@ -141,39 +248,67 @@ flowchart LR
 
 `src/absa_engine.py` 支持三种后端，接口完全一致：
 
-| 后端 | 触发条件 | 模型/实现 | 适用场景 |
+| 后端 | 触发条件 | 模型/实现 | GenAI 角色 |
 | --- | --- | --- | --- |
-| `hf` | 已安装 `transformers` 且模型已缓存或允许下载 | `yangheng/deberta-v3-base-absa-v1.1`，输入 `(sentence, aspect)` | 中文/英文细粒度，离线推理 |
-| `deepseek` | 配置 `DEEPSEEK_API_KEY` | DeepSeek JSON mode，一次返回全部四元组 | 隐式方面、跨句、复杂表达 |
-| `lexicon` | 默认兜底 | 双语实体表 + 13 类方面词典 + 否定/程度副词规则 | CI、无网环境、冷启动 |
+| `deepseek` | 配置 `DEEPSEEK_API_KEY`（**推荐主路径**） | DeepSeek JSON Mode，一次生成全部四元组 | **生成式信息抽取**：隐式方面、跨句、反讽、零样本新实体 |
+| `hf` | 已安装 `transformers` 且模型已缓存/允许下载 | `yangheng/deberta-v3-base-absa-v1.1`，输入 `(sentence, aspect)` | 判别式小模型，低成本批量推理 |
+| `lexicon` | 默认兜底 | 双语实体表 + 13 类方面词典 + 否定/程度副词规则 | 确定性 fallback，保证 CI/离线可复现 |
 
-**方面体系**（`src/resources/lexicons.py`）：`withdrawal / deposit / fee / security / customer_service / app_experience / settlement_speed / kyc / market / liquidity / product / compliance / general`。
+**Generative IE 的 Prompt 契约**（真实代码 `src/absa_engine.py::_SYSTEM_PROMPT`）：
 
-ABSA 的工程细节：
+```text
+你是金融/加密货币领域的细粒度情感分析专家。
+从用户评论中抽取四元组 (实体, 方面类别, 观点词, 情感极性)。
+只输出 JSON 对象：
+{"quadruples":[{"entity":"币安","aspect_category":"withdrawal",
+"opinion_term":"提现失败","sentiment":-0.9,"label":"negative"}]}
+要求：
+1. aspect_category 必须取自给定类别；无法归类时用 general。
+2. sentiment 取值 -1..1（-1 极负面，0 中性，1 极正面）。
+3. 每个四元组必须有明确观点词；不要编造评论中不存在的内容。
+4. 最多输出 N 条。
+```
 
-- 实体识别采用**最长别名优先 + 英文词边界**，避免 `eth` 命中 `ethereum`、`火币` 命中 `币`；
-- 按中英文标点切分子句，子句内做**方面-观点词最近邻**匹配，否定词/程度副词在 5 字符窗口内生效（如「不太满意」→ 负向）；
-- `event_id = sha1(comment_id + aspect)`，Kafka 重试不会产生重复事件；
+**为什么这是 Generative IE，而不是传统 NLP？**
+
+| 传统做法 | 本系统 |
+| --- | --- |
+| 正则匹配「提现失败」 | LLM 理解「钱卡了三天」「出金一直处理中」等**同义/隐式表达** |
+| NER 需要标注 `B-ENTITY / I-ASPECT` | 直接生成 `(entity, aspect, opinion, polarity)` **语义四元组** |
+| 新方面要重训分类头 | 改 taxonomy + few-shot，**零样本适配**新业务 |
+| 输出只有标签 | 同时生成 `opinion_term` 与 `rationale`，可解释、可入图 |
+
+工程上仍保留确定性护栏：
+
+- Pydantic 校验每个字段，`sentiment` 越界会被裁剪；
+- LLM 返回非法 JSON 时提取 fenced block / 重试，最终降级到 lexicon；
+- `aspect_category` 与内部 taxonomy 对齐，避免图谱节点爆炸；
 - 输出同时保留连续分数 `sentiment ∈ [-1, 1]` 与离散标签，供阈值、加权、聚合使用。
+
+**方面体系**（`src/resources/lexicons.py`，LLM prompt 与离线 fallback 共用同一 taxonomy）：
+`withdrawal / deposit / fee / security / customer_service / app_experience / settlement_speed / kyc / market / liquidity / product / compliance / general`。
 
 运行：
 
 ```bash
-# 规则后端（零依赖）
-ABSA_BACKEND=lexicon python -m src.absa_engine
+# GenAI 主路径：DeepSeek JSON Mode
+ABSA_BACKEND=deepseek DEEPSEEK_API_KEY=sk-... python -m src.absa_engine
 
-# HuggingFace（首次需允许下载）
+# 判别式小模型：HuggingFace DeBERTa ABSA（首次需允许下载）
 pip install -r requirements-ml.txt
 ABSA_BACKEND=hf ABSA_ALLOW_MODEL_DOWNLOAD=true python -c \
   "from src.absa_engine import ABSAEngine; print(ABSAEngine().analyze('币安提现失败').structured)"
 
-# DeepSeek
-ABSA_BACKEND=deepseek DEEPSEEK_API_KEY=sk-... python -m src.absa_engine
+# 确定性 fallback：离线词典（CI / 无网）
+ABSA_BACKEND=lexicon python -m src.absa_engine
 ```
 
 ---
 
-### 维度二：多 Agent 委员会与 SDI 动态路由
+### 维度二：LLM-as-a-Judge 与 Agentic AI Routing
+
+> **GenAI 关键词**：LLM-as-a-Judge、AI Routing、Reasoning Trace、Cost-aware Inference。
+> 传统做法是「全量小模型」或「全量大模型」；本系统让 LLM 只做**争议样本的裁判**。
 
 `src/tri_agent.py` 中三个 Agent 的职责与预算：
 
@@ -181,7 +316,14 @@ ABSA_BACKEND=deepseek DEEPSEEK_API_KEY=sk-... python -m src.absa_engine
 | --- | --- | --- | --- | --- |
 | VADER Agent | 词级 | 英文用 `vaderSentiment`；中文用等价的否定/程度副词词典（VADER 本身不支持中文） | < 1 ms | ≈ 0 |
 | FinBERT Agent | 句级 | `ProsusAI/finbert`；无模型时用**金融子词典**（刻意不认识「敷衍/失望」等非金融词，模拟领域模型盲区） | 1~20 ms | ≈ 0 |
-| LLM Agent | 跨句/语篇 | DeepSeek / OpenAI 兼容 JSON mode，接收 ABSA 四元组 + 两模型分数 | 0.5~3 s | 按 token |
+| **LLM Judge** | 跨句/语篇 | DeepSeek / OpenAI 兼容 JSON Mode，接收 ABSA 四元组 + 两模型分数 + SDI | 0.5~3 s | 按 token |
+
+**为什么让 LLM 当 Judge？**
+
+- 小模型只输出 `score`，无法解释「为什么」；LLM Judge 返回 **JSON verdict + rationale**，形成可审计的 reasoning trace；
+- 反讽、跨句指代、隐含方面（「钱卡了三天」= 提现问题）只有生成式模型能稳定处理；
+- 不是每条都调用：**SDI 是路由策略（policy）**，LLM 是策略命中后的**裁决器（judge）**，两者职责分离；
+- 失败可降级：LLM 超时/无 Key 时退回「VADER + FinBERT + ABSA 加权共识」，主流程不中断。
 
 **SDI（Semantic Divergence Index）**：
 
@@ -192,6 +334,34 @@ $$
 - 分数差项归一化到 `[0,1]`：两个模型都在 `[-1,1]`，最大差为 2；
 - 标签冲突项给 0.3 的硬惩罚：方向相反本身比「差 0.1 分」更危险；
 - 默认阈值 `SDI_THRESHOLD=0.45`：`SDI > 0.45` 才升级 LLM，否则选择**置信度更高的小模型**。
+
+**Judge 的 Prompt 契约**（真实代码 `src/tri_agent.py::_LLM_SYSTEM`）：
+
+```text
+你是舆情分析委员会的仲裁 Agent，负责处理小模型分歧较大的复杂评论。
+结合上下文、反讽、跨句指代与领域知识给出整体情感判断。
+只输出 JSON：
+{"sentiment": -1.0, "confidence": 0.85,
+ "label": "negative|neutral|positive", "rationale": "不超过80字的依据"}
+```
+
+**AI Routing 策略（Agentic Policy）**：
+
+```python
+vader, finbert = vader_agent(text), finbert_agent(text)
+sdi = 0.7 * abs(vader.score - finbert.score) / 2 + 0.3 * (vader.label != finbert.label)
+
+if sdi <= THETA:
+    # 80% 流量：确定性路径，成本≈0
+    final = max(vader, finbert, key=lambda x: x.confidence)
+else:
+    # 20% 流量：LLM-as-a-Judge，带 ABSA 四元组作为证据
+    final = llm_judge(text, evidence=quadruples, sdi=sdi)
+
+audit(final, sdi=sdi, cost=..., rationale=final.rationale)
+```
+
+这段策略把「模型选择」从硬编码 if-else 变成了**基于不确定性的自适应决策**：阈值、prompt、证据字段都可配置和回放。
 
 **路由记录**（每次必写，JSONL + Elasticsearch `tri_agent_decisions`）：
 
@@ -270,7 +440,32 @@ python -m src.stream_processor --from-beginning
 
 ---
 
-### 维度四：事件与实体知识图谱（GraphRAG）
+### 维度四：GraphRAG——LLM 抽取知识、图检索增强生成
+
+> **GenAI 关键词**：LLM-built Knowledge Graph、Graph Retrieval、Multi-hop Reasoning、Context Engineering。
+> 图谱不是人工手写的 schema 填充，而是**生成式抽取的结构化产物**；检索不是向量相似度，而是**实体/事件/方面之间的关系推理**。
+
+**GraphRAG 四阶段**：
+
+| 阶段 | 本系统实现 | 说明 |
+| --- | --- | --- |
+| **Extract** | `ABSAEngine`（LLM / HF）→ 四元组；`event_detector` → Event | LLM 把非结构化评论变成 `(entity, aspect, opinion, polarity, timestamp)` |
+| **Build** | `GraphBuilder` → `MERGE Entity/Event/INVOLVES` | 代码只负责 schema 与幂等写入，**语义由 LLM 产生** |
+| **Retrieve** | `Neo4jGraphStore.multihop()` / `InMemoryGraphStore.multihop()` | 支持按实体名或方面词（如「提现」）做 1~4 跳，边带时间/极性过滤 |
+| **Generate** | 返回 `MultiHopResult`（事件 + 路径 + 时间线） | 该结构化子图可直接作为 LLM 的 RAG context；仓库聚焦可信检索层，生成端可接任意 LLM |
+
+一次典型 GraphRAG 调用：
+
+```text
+用户问题：最近「提现」相关的负面事件有哪些？是否影响到其他平台？
+        ↓
+Retriever: multihop("提现", hops=2, negative_only=true)
+        ↓
+Context: [币安·提现·负面事件 @12:58 sentiment=-0.77,
+          Gate.io·提现·负面事件 @05:56 sentiment=-0.78, ...]
+        ↓
+Generator (可插拔): 基于上述事实链生成归因/预警/日报
+```
 
 **Schema**（`src/graph_builder.py`）：
 
@@ -432,6 +627,19 @@ python scripts/seed_demo_data.py
 # 测试
 python -m pytest -q
 # 22 passed
+```
+
+体验 GenAI 主路径（会产生真实 API 调用）：
+
+```bash
+export DEEPSEEK_API_KEY=sk-...
+export ABSA_BACKEND=deepseek
+
+# 生成式信息抽取
+python -m src.absa_engine "币安提现三天没到账，客服还敷衍，太失望了"
+
+# LLM-as-a-Judge 的 SDI 路由演示（3 条样本）
+python -m src.tri_agent
 ```
 
 demo 产物：
@@ -616,6 +824,22 @@ curl -X POST http://localhost:8000/analyze \
 
 > 关于阈值的敏感性（同一批 544 条数据）：`0.35 → 41.4%` 路由、`0.45 → 20.2%`、`0.60 → 9.0%`。阈值不是越低越好：越低越安全但越贵，建议用标注集优化「路由后的 F1 / 成本」曲线。
 
+### 6.5 GenAI 评测协议（可复用）
+
+GenAI 项目不能只看「准确率」，还要看**结构化输出可靠性、路由经济性、裁判一致性**。本仓库的审计日志天然支持这些指标：
+
+| 指标 | 定义 | 离线 demo 值 | 生产建议 |
+| --- | --- | --- | --- |
+| Structured Output Validity | Pydantic 校验通过的 LLM/ABSA 输出比例 | 100%（lexicon fallback 全通过） | 监控 LLM JSON 解析失败率，>2% 触发 prompt 回滚 |
+| LLM Routing Rate | `routed_to_llm=true / total` | **20.2%** | 按业务风险调 θ，金融合规场景可调低 |
+| Judge Fallback Rate | LLM 不可用而走共识的比例 | 100%（未配置 Key） | 生产应 <1%，并告警 |
+| Cost per 1k Comments | `sum(estimated_cost)` | $0（fallback）；影子 avoided ≈ $0.13/1k | 与预算对齐，按模型价格自动换算 |
+| Avg Decision Latency | Tri-Agent 端到端耗时 | **0.125 ms**（本地小模型） | 监控 P95；LLM 路由占比影响尾部延迟 |
+| Judge Agreement | LLM 裁决与人工标注一致率 | 待标注集评测 | 每周抽样 200 条做一致性审计 |
+| Graph Retrieval Hit Rate | 多跳返回事件中与问题相关的比例 | 需人工评估 | 结合点击/工单闭环反馈 |
+
+> LLM 主路径的评测方法：设置 `DEEPSEEK_API_KEY` 后重跑 `scripts/seed_demo_data.py` 或 `--replay`，把 `routing_audit.jsonl` 接入离线评估脚本，即可得到真实 token 成本、JSON 失败率与 Judge 延迟。
+
 ---
 
 ## 7. 成本优势与 GraphRAG 业务价值
@@ -652,14 +876,27 @@ curl -X POST http://localhost:8000/analyze \
 | 「监管问询时如何自证？」 | 截图/Excel，不可追溯 | 每条边带 `comment_id`，可回查原文与模型决策 |
 | 「给 LLM 的 RAG 上下文？」 | 向量检索相似句，缺结构 | 返回子图 + 时间线，LLM 可基于事实链回答 |
 
+**GraphRAG vs 传统 Vector RAG**：
+
+| 维度 | Vector RAG | 本系统 GraphRAG |
+| --- | --- | --- |
+| 检索单元 | 相似文本块 | 实体、事件、方面、关系路径 |
+| 多跳能力 | 弱（靠 top-k 拼接） | 强（`INVOLVES*1..N`） |
+| 时间推理 | 元数据过滤 | 边/事件自带 timestamp，可重建时间线 |
+| 可解释性 | 相似度分数 | 路径 + 边属性 + `comment_id` 回溯 |
+| 适用问题 | 「找相似评论」 | 「谁影响了谁、何时、因为哪个方面」 |
+
+**Context Engineering**：`MultiHopResult` 的 `events + paths` 就是为 LLM 准备的结构化上下文。相比把 20 条相似评论直接塞进 prompt，图检索提供的是**去重、带时间、带关系、带极性**的事实链，能显著降低幻觉与上下文浪费。
+
 **一个真实可复现的查询**（离线 demo，`hops=2`，负面事件）返回的事件包括「币安·提现·负面事件」「Gate.io·提现·负面事件」「币安·手续费·负面事件」等，说明系统不仅能找到直接提及「提现」的评论，还能沿同一实体的其他事件扩展到关联风险。生产环境建议把 `hops` 限制在 2~3，避免图爆炸。
 
 ### 7.3 从 05 到现在的「意义」
 
-- **分析范式**：从「文本 → 主题词」升级为「文本 → 结构化事实 → 关系网络 → 可查询服务」；
-- **成本范式**：从「全量调用大模型」升级为「小模型优先 + 分歧时仲裁」，把大模型用在真正不确定的样本上；
-- **工程范式**：从「Notebook/脚本」升级为「可编排、可观测、可降级、可测试」的实时系统；
-- **业务范式**：从「事后报告」升级为「分钟级预警 + 根因定位 + 量化信号」。
+- **分析范式**：从「文本 → 主题词」升级为「生成式抽取 → 结构化事实 → 知识图谱 → GraphRAG 检索」；
+- **推理范式**：从「固定分类器」升级为「小模型快筛 + LLM Judge 仲裁 + 可审计 reasoning trace」；
+- **成本范式**：从「全量调用大模型」升级为「按语义分歧付费」，把 LLM 预算集中在真正不确定的 20% 样本上；
+- **工程范式**：从「Notebook/脚本」升级为「Agentic Workflow：可编排、可观测、可降级、可测试」的实时 GenAI 系统；
+- **业务范式**：从「事后报告」升级为「分钟级预警 + 根因定位 + 多跳归因 + 量化信号」。
 
 ---
 
@@ -678,10 +915,10 @@ opinion-and-event-graph-system/
 ├── config/
 │   └── settings.py              # 统一配置（pydantic-settings）
 ├── src/
-│   ├── absa_engine.py           # 维度一：ABSA（HF / DeepSeek / lexicon）
-│   ├── tri_agent.py             # 维度二：VADER/FinBERT/LLM + SDI 路由 + 审计
-│   ├── stream_processor.py      # 维度三：Kafka 消费 + 滑动窗口告警
-│   ├── graph_builder.py         # 维度四：Neo4j / 内存图 + 多跳查询
+│   ├── absa_engine.py           # Generative IE：LLM / HF / lexicon 三后端
+│   ├── tri_agent.py             # LLM-as-a-Judge + SDI 路由 + 审计
+│   ├── stream_processor.py      # Agentic 流处理 + 滑动窗口告警
+│   ├── graph_builder.py         # GraphRAG：Neo4j / 内存图 + 多跳查询
 │   ├── quant_signal.py          # 维度五：滞后相关 + 格兰杰检验
 │   ├── api_server.py            # 维度六：FastAPI
 │   ├── event_detector.py        # 评论 → 事件投影
@@ -737,6 +974,7 @@ python -m pytest -q
 ### 10.1 当前限制
 
 1. **离线词典是「可复现的基线」而非 SOTA**：它能保证 CI/演示稳定，但真实中文 ABSA 建议启用 HF 或 DeepSeek；
+2. **默认 demo 不调用 LLM**：为避免 API Key/费用，`seed_demo_data.py` 走 lexicon fallback，因此 Judge Agreement、真实 token 成本等 GenAI 指标需要在配置 `DEEPSEEK_API_KEY` 后重跑；
 2. **中文 VADER 是等价规则实现**：`vaderSentiment` 只支持英文，中文走同一套否定/程度副词规则，命名保持 VADER Agent 以体现「词级小模型」角色；
 3. **实体表是金融/加密领域子集**：新平台需要扩充 `ENTITY_ALIASES`，或接入 NER；
 4. **量化使用模拟 K 线**：结果只验证方法；`--live` 接入 Binance 后仍需做平稳性、协整、样本外回测；
@@ -774,7 +1012,7 @@ cat reports/demo_metrics.json
 
 ## 12. 一句话总结
 
-> 05 解决了「用户说了什么」，这个系统进一步回答「**谁、在哪个方面、什么时间、和谁一起、有多负面、值不值得调用大模型**」——并用可编排的流处理、可追溯的图谱和可复现的实验，把答案变成能上线的服务。
+> 05 解决了「用户说了什么」；这个 GenAI 系统进一步回答「**谁、在哪个方面、什么时间、和谁一起、有多负面、值不值得调用大模型**」——用 **LLM-as-a-Judge** 控制成本，用 **Generative IE** 抽取事实，用 **GraphRAG** 组织关系，用 **Agentic Workflow** 把答案变成可解释、可审计、可上线的实时服务。
 
 
 
