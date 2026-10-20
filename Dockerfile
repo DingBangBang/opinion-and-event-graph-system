@@ -2,6 +2,7 @@
 FROM python:3.10-slim-bookworm
 
 ARG INSTALL_ML=false
+ARG PIP_INDEX_URL=https://pypi.org/simple
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -10,10 +11,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt requirements-ml.txt ./
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install --upgrade pip --index-url "$PIP_INDEX_URL" \
+    && pip install --index-url "$PIP_INDEX_URL" -r requirements.txt
 # Optional ~2GB Transformer stack; enable with:
 #   docker compose build --build-arg INSTALL_ML=true
-RUN if [ "$INSTALL_ML" = "true" ]; then pip install -r requirements-ml.txt; fi
+RUN if [ "$INSTALL_ML" = "true" ]; then pip install --index-url "$PIP_INDEX_URL" -r requirements-ml.txt; fi
 
 COPY config ./config
 COPY src ./src

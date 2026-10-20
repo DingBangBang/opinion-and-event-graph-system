@@ -472,6 +472,8 @@ INSTALL_ML=true docker compose build
 ABSA_ALLOW_MODEL_DOWNLOAD=true docker compose up -d
 ```
 
+> 国内网络若遇到 pip SSL/超时：`PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple docker compose build`。
+
 本地 Kafka 生产者（容器外）：
 
 ```bash
